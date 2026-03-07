@@ -6,7 +6,111 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config(); // loads variables from .env file
 
+const http = require('http');
+const { Server } = require('socket.io');
+const jwt = require('jsonwebtoken');
+const Event = require('./models/Event');
+const ForumMessage = require('./models/ForumMessage');
+
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: process.env.FRONTEND_URL || '*',
+    methods: ['GET', 'POST']
+  }
+});
+
+// Socket.io authentication middleware
+io.use((socket, next) => {
+  const token = socket.handshake.auth.token;
+  if (!token) {
+    return next(new Error('Authentication error: No token provided'));
+  }
+  
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    socket.user = decoded; // Attach user info to socket
+    next();
+  } catch (err) {
+    next(new Error('Authentication error: Invalid token'));
+  }
+});
+
+// Setup sockets
+io.on('connection', (socket) => {
+  const sendSocketError = (message) => socket.emit('error', { message });
+
+  async function verifyOrganizerOwnership(eventId) {
+    if (socket.user.role !== 'organizer') {
+      sendSocketError('Only organizers can perform this action');
+      return false;
+    }
+
+    const event = await Event.findOne({ _id: eventId, organizer: socket.user.id });
+    if (!event) {
+      sendSocketError('Access denied: Not your event');
+      return false;
+    }
+
+    return true;
+  }
+
+  socket.on('joinRoom', (eventId) => {
+    socket.join(eventId);
+  });
+
+  socket.on('sendMessage', async (data) => {
+    const { eventId, senderName, senderRole, text } = data;
+    try {
+      const newMessage = await ForumMessage.create({
+        event: eventId,
+        senderName,
+        senderRole,
+        text
+      });
+      io.to(eventId).emit('messageReceived', newMessage);
+    } catch (err) {
+      console.error('Error saving message:', err);
+      sendSocketError('Failed to send message');
+    }
+  });
+
+  socket.on('pinMessage', async ({ eventId, messageId }) => {
+    try {
+      if (!(await verifyOrganizerOwnership(eventId))) return;
+      
+      const message = await ForumMessage.findById(messageId);
+      if (message && message.event.toString() === eventId) {
+        message.isPinned = !message.isPinned;
+        await message.save();
+        io.to(eventId).emit('messagePinned', { messageId, isPinned: message.isPinned });
+      } else {
+        sendSocketError('Message not found in this event');
+      }
+    } catch (err) {
+      console.error('Error pinning message:', err);
+      sendSocketError('Failed to pin message');
+    }
+  });
+
+  socket.on('deleteMessage', async ({ eventId, messageId }) => {
+    try {
+      if (!(await verifyOrganizerOwnership(eventId))) return;
+      
+      const message = await ForumMessage.findOne({ _id: messageId, event: eventId });
+      if (message) {
+        await message.deleteOne();
+        io.to(eventId).emit('messageDeleted', messageId);
+      } else {
+        sendSocketError('Message not found in this event');
+      }
+    } catch (err) {
+      console.error('Error deleting message:', err);
+      sendSocketError('Failed to delete message');
+    }
+  });
+});
 
 // Allow requests from the frontend
 app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
@@ -25,6 +129,7 @@ app.use('/api/registrations', require('./routes/registrations'));
 app.use('/api/organizers',    require('./routes/organizers'));
 app.use('/api/admin',         require('./routes/admin'));
 app.use('/api/feedback',      require('./routes/feedback'));
+app.use('/api/forum',         require('./routes/forum'));
 
 // Connect to MongoDB, then start the server
 mongoose.connect(process.env.MONGO_URI)
@@ -36,6 +141,6 @@ mongoose.connect(process.env.MONGO_URI)
 
     // Start listening for requests
     const PORT = process.env.PORT || 5000;
-    app.listen(PORT, () => console.log('Server running on port ' + PORT));
+    server.listen(PORT, () => console.log('Server running on port ' + PORT));
   })
   .catch(err => console.error('MongoDB connection error:', err));

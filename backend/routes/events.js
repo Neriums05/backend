@@ -8,7 +8,7 @@ const router = require('express').Router();
 const Event = require('../models/Event');
 const User = require('../models/User');
 const Registration = require('../models/Registration');
-const { auth, requireRole } = require('../middleware/auth');
+const { requireRole } = require('../middleware/auth');
 
 // Helper: post a new event notification to Discord via webhook
 // Uses the built-in fetch (Node 18+). Silently fails if no webhook configured.
@@ -28,6 +28,10 @@ async function fireDiscordWebhook(webhookUrl, event) {
   }
 }
 
+async function findOwnedEvent(eventId, organizerId) {
+  return Event.findOne({ _id: eventId, organizer: organizerId });
+}
+
 // -------------------------------------------------------
 // GET /api/events — browse all visible events with filters
 // -------------------------------------------------------
@@ -36,13 +40,13 @@ router.get('/', async (req, res) => {
     const { search, type, dateFrom, dateTo, eligibility } = req.query;
     let query = { status: { $in: ['published', 'ongoing', 'completed'] } };
 
-    if (type) query.eventType = type;
+    if (type)        query.eventType  = type;
     if (eligibility) query.eligibility = { $regex: eligibility, $options: 'i' };
 
     if (dateFrom || dateTo) {
       query.startDate = {};
       if (dateFrom) query.startDate.$gte = new Date(dateFrom);
-      if (dateTo) query.startDate.$lte = new Date(dateTo);
+      if (dateTo)   query.startDate.$lte = new Date(dateTo);
     }
 
     // Fetch all matching events first, then filter by search (including organizer name)
@@ -122,7 +126,7 @@ router.get('/by-organizer/:organizerId', async (req, res) => {
 router.get('/:id/attendance', ...requireRole('organizer'), async (req, res) => {
   try {
     // Verify this organizer owns the event before returning attendance data
-    const event = await Event.findOne({ _id: req.params.id, organizer: req.user.id });
+    const event = await findOwnedEvent(req.params.id, req.user.id);
     if (!event) return res.status(403).json({ message: 'Access denied: not your event' });
 
     const regs = await Registration.find({ event: req.params.id })
@@ -140,7 +144,7 @@ router.get('/:id/attendance', ...requireRole('organizer'), async (req, res) => {
 router.post('/:id/attend', ...requireRole('organizer'), async (req, res) => {
   try {
     // Verify this organizer owns the event
-    const event = await Event.findOne({ _id: req.params.id, organizer: req.user.id });
+    const event = await findOwnedEvent(req.params.id, req.user.id);
     if (!event) return res.status(403).json({ message: 'Access denied: not your event' });
 
     const { ticketId } = req.body;
@@ -164,9 +168,9 @@ router.post('/:id/attend', ...requireRole('organizer'), async (req, res) => {
       return res.status(400).json({ message: 'This registration is not active' });
     }
 
-    reg.attended = true;
+    reg.attended   = true;
     reg.attendedAt = new Date();
-    reg.status = 'attended';
+    reg.status     = 'attended';
     await reg.save();
 
     res.json({ message: 'Attendance marked!', participant: reg.participant });
@@ -213,8 +217,19 @@ router.get('/:id', async (req, res) => {
 // -------------------------------------------------------
 router.post('/', ...requireRole('organizer'), async (req, res) => {
   try {
+    const { name, eventType } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ message: 'Event name is required' });
+    if (!eventType) return res.status(400).json({ message: 'Event type is required' });
+
+    let { tags, customForm, variants } = req.body;
+    if (tags && typeof tags === 'string') tags = tags.split(',').map(t => t.trim()).filter(Boolean);
+    if (!Array.isArray(tags)) tags = [];
+    if (!Array.isArray(customForm)) customForm = [];
+    if (!Array.isArray(variants)) variants = [];
+
     const event = await Event.create({
       ...req.body,
+      tags, customForm, variants,
       organizer: req.user.id,
       status: req.body.status || 'draft'
     });
@@ -245,24 +260,24 @@ router.put('/:id', ...requireRole('organizer'), async (req, res) => {
 
     if (event.status === 'draft') {
       // Draft events can be fully edited - update any field that was sent
-      if (req.body.name !== undefined) event.name = req.body.name;
-      if (req.body.description !== undefined) event.description = req.body.description;
-      if (req.body.eventType !== undefined) event.eventType = req.body.eventType;
-      if (req.body.eligibility !== undefined) event.eligibility = req.body.eligibility;
-      if (req.body.startDate !== undefined) event.startDate = req.body.startDate;
-      if (req.body.endDate !== undefined) event.endDate = req.body.endDate;
+      if (req.body.name !== undefined)                 event.name = req.body.name;
+      if (req.body.description !== undefined)          event.description = req.body.description;
+      if (req.body.eventType !== undefined)            event.eventType = req.body.eventType;
+      if (req.body.eligibility !== undefined)          event.eligibility = req.body.eligibility;
+      if (req.body.startDate !== undefined)            event.startDate = req.body.startDate;
+      if (req.body.endDate !== undefined)              event.endDate = req.body.endDate;
       if (req.body.registrationDeadline !== undefined) event.registrationDeadline = req.body.registrationDeadline;
-      if (req.body.registrationLimit !== undefined) event.registrationLimit = req.body.registrationLimit;
-      if (req.body.registrationFee !== undefined) event.registrationFee = req.body.registrationFee;
-      if (req.body.tags !== undefined) event.tags = req.body.tags;
+      if (req.body.registrationLimit !== undefined)    event.registrationLimit = req.body.registrationLimit;
+      if (req.body.registrationFee !== undefined)      event.registrationFee = req.body.registrationFee;
+      if (req.body.tags !== undefined)                 event.tags = req.body.tags;
       if (req.body.customForm !== undefined && !event.formLocked) event.customForm = req.body.customForm;
-      if (req.body.variants !== undefined) event.variants = req.body.variants;
+      if (req.body.variants !== undefined)             event.variants = req.body.variants;
       if (req.body.purchaseLimitPerParticipant !== undefined) event.purchaseLimitPerParticipant = req.body.purchaseLimitPerParticipant;
-      if (req.body.status !== undefined) event.status = req.body.status;
+      if (req.body.status !== undefined)               event.status = req.body.status;
     } else if (event.status === 'published') {
       // Published events: only limited fields can change
-      if (req.body.description !== undefined) event.description = req.body.description;
-      if (req.body.registrationDeadline) event.registrationDeadline = req.body.registrationDeadline;
+      if (req.body.description !== undefined)          event.description = req.body.description;
+      if (req.body.registrationDeadline)               event.registrationDeadline = req.body.registrationDeadline;
       if (req.body.registrationLimit && Number(req.body.registrationLimit) > (event.registrationLimit || 0)) {
         event.registrationLimit = Number(req.body.registrationLimit);
       }

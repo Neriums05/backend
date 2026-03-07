@@ -7,6 +7,27 @@ const Registration = require('../models/Registration');
 const bcrypt = require('bcryptjs');
 const { requireRole } = require('../middleware/auth');
 
+function buildOrganizerLoginEmail(organizerName) {
+  return organizerName
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/[^a-z0-9]/g, '') + '@felicity.org';
+}
+
+function generatePassword(prefix) {
+  return prefix + Math.random().toString(36).slice(2, 8);
+}
+
+function buildResetHistoryEntry(user, status, adminComment) {
+  return {
+    status,
+    reason: user.passwordResetRequest.reason,
+    requestedAt: user.passwordResetRequest.requestedAt,
+    resolvedAt: new Date(),
+    adminComment
+  };
+}
+
 // -------------------------------------------------------
 // POST /api/admin/organizer
 // Admin: create a new organizer account
@@ -19,9 +40,11 @@ router.post('/organizer', ...requireRole('admin'), async (req, res) => {
     if (!organizerName || !organizerName.trim()) {
       return res.status(400).json({ message: 'Organizer name is required' });
     }
+    if (!category || !category.trim()) return res.status(400).json({ message: 'Category is required' });
+    if (!contactEmail || !contactEmail.trim()) return res.status(400).json({ message: 'Contact email is required' });
 
     // Generate a login email based on the organizer name
-    const loginEmail = organizerName.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '') + '@felicity.org';
+    const loginEmail = buildOrganizerLoginEmail(organizerName);
 
     // Check for duplicate email
     const existing = await User.findOne({ email: loginEmail });
@@ -29,7 +52,7 @@ router.post('/organizer', ...requireRole('admin'), async (req, res) => {
       return res.status(400).json({ message: 'An organizer with this name already exists (email conflict: ' + loginEmail + ')' });
     }
 
-    const rawPassword    = 'Pass@' + Math.random().toString(36).slice(2, 8);
+    const rawPassword    = generatePassword('Pass@');
     const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
     const user = await User.create({
@@ -114,17 +137,11 @@ router.put('/reset-requests/:id', ...requireRole('admin'), async (req, res) => {
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     if (action === 'approve') {
-      const newPassword = 'New@' + Math.random().toString(36).slice(2, 8);
+      const newPassword = generatePassword('New@');
       user.password = await bcrypt.hash(newPassword, 10);
 
       // Push to history before updating status
-      user.passwordResetHistory.push({
-        status:      'approved',
-        reason:      user.passwordResetRequest.reason,
-        requestedAt: user.passwordResetRequest.requestedAt,
-        resolvedAt:  new Date(),
-        adminComment
-      });
+      user.passwordResetHistory.push(buildResetHistoryEntry(user, 'approved', adminComment));
       user.passwordResetRequest.status      = 'approved';
       user.passwordResetRequest.adminComment = adminComment;
       await user.save();
@@ -133,13 +150,7 @@ router.put('/reset-requests/:id', ...requireRole('admin'), async (req, res) => {
 
     } else {
       // Push rejected entry to history too
-      user.passwordResetHistory.push({
-        status:      'rejected',
-        reason:      user.passwordResetRequest.reason,
-        requestedAt: user.passwordResetRequest.requestedAt,
-        resolvedAt:  new Date(),
-        adminComment
-      });
+      user.passwordResetHistory.push(buildResetHistoryEntry(user, 'rejected', adminComment));
       user.passwordResetRequest.status      = 'rejected';
       user.passwordResetRequest.adminComment = adminComment;
       await user.save();

@@ -15,6 +15,22 @@ function createToken(user) {
   );
 }
 
+function isIIITEmail(email) {
+  return email.endsWith('@iiit.ac.in') || email.endsWith('@students.iiit.ac.in');
+}
+
+function getDisplayName(user) {
+  if (user.role === 'participant') return user.firstName + ' ' + user.lastName;
+  if (user.role === 'organizer') return user.organizerName;
+  return 'Admin';
+}
+
+function assignIfDefined(target, source, fields) {
+  for (const field of fields) {
+    if (source[field] !== undefined) target[field] = source[field];
+  }
+}
+
 // -------------------------------------------------------
 // POST /api/auth/register
 // Creates a new participant account
@@ -23,10 +39,13 @@ router.post('/register', async (req, res) => {
   try {
     const { email, password, firstName, lastName, participantType, college, contactNumber } = req.body;
 
+    if (!email || !password || !firstName || !lastName || !participantType) {
+      return res.status(400).json({ message: 'All required fields must be provided' });
+    }
+
     // IIIT students must use their IIIT email
     if (participantType === 'iiit') {
-      const isIIITEmail = email.endsWith('@iiit.ac.in') || email.endsWith('@students.iiit.ac.in');
-      if (!isIIITEmail) {
+      if (!isIIITEmail(email)) {
         return res.status(400).json({ message: 'IIIT participants must register with an @iiit.ac.in email' });
       }
     }
@@ -64,6 +83,9 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Email and password are required' });
+    }
 
     // Find user by email
     const user = await User.findOne({ email });
@@ -78,9 +100,7 @@ router.post('/login', async (req, res) => {
     }
 
     // Build a friendly display name depending on role
-    let name = 'Admin';
-    if (user.role === 'participant') name = user.firstName + ' ' + user.lastName;
-    if (user.role === 'organizer')  name = user.organizerName;
+    const name = getDisplayName(user);
 
     const token = createToken(user);
     res.json({
@@ -116,13 +136,14 @@ router.put('/profile', auth, async (req, res) => {
 
     if (user.role === 'participant') {
       // Only allow updating participant fields
-      const { firstName, lastName, contactNumber, college, interests, followedOrganizers } = req.body;
-      if (firstName           !== undefined) user.firstName    = firstName;
-      if (lastName            !== undefined) user.lastName     = lastName;
-      if (contactNumber       !== undefined) user.contactNumber = contactNumber;
-      if (college             !== undefined) user.college      = college;
-      if (interests           !== undefined) user.interests    = interests;
-      if (followedOrganizers  !== undefined) user.followedOrganizers = followedOrganizers;
+      assignIfDefined(user, req.body, [
+        'firstName',
+        'lastName',
+        'contactNumber',
+        'college',
+        'interests',
+        'followedOrganizers'
+      ]);
     }
     // Organizers update their profile via PUT /organizers/profile instead
 

@@ -3,7 +3,7 @@
 const router = require('express').Router();
 const Registration = require('../models/Registration');
 const Event = require('../models/Event');
-const { auth, requireRole } = require('../middleware/auth');
+const { requireRole } = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
 const QRCode = require('qrcode');
 const { sendEmail } = require('../utils/email');
@@ -152,15 +152,16 @@ router.post('/merch/:eventId', ...requireRole('participant'), async (req, res) =
       return res.status(400).json({ message: 'Please select a valid size and colour' });
     }
 
-    if (!quantity || quantity < 1) {
-      return res.status(400).json({ message: 'Quantity must be at least 1' });
+    const orderQuantity = Number(quantity);
+    if (!orderQuantity || !Number.isInteger(orderQuantity) || orderQuantity < 1) {
+      return res.status(400).json({ message: 'Quantity must be a whole number greater than 0' });
     }
 
     // Check stock for the chosen variant
     const variantData = event.variants.find(
       v => v.size === variant.size && v.color === variant.color
     );
-    if (!variantData || variantData.stock < quantity) {
+    if (!variantData || variantData.stock < orderQuantity) {
       return res.status(400).json({ message: 'Out of stock' });
     }
 
@@ -171,7 +172,7 @@ router.post('/merch/:eventId', ...requireRole('participant'), async (req, res) =
       status: { $ne: 'cancelled' }
     });
     const alreadyBought = existingOrders.reduce((sum, r) => sum + (r.quantity || 1), 0);
-    if (alreadyBought + quantity > event.purchaseLimitPerParticipant) {
+    if (alreadyBought + orderQuantity > event.purchaseLimitPerParticipant) {
       return res.status(400).json({ message: 'Purchase limit exceeded' });
     }
 
@@ -183,7 +184,7 @@ router.post('/merch/:eventId', ...requireRole('participant'), async (req, res) =
       ticketId,
       status: 'pending_payment', // wait for payment proof upload
       variant,
-      quantity
+      quantity: orderQuantity
     });
 
     res.status(201).json({
