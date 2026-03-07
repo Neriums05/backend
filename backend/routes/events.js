@@ -255,7 +255,7 @@ router.put('/:id', ...requireRole('organizer'), async (req, res) => {
       if (req.body.registrationLimit !== undefined)    event.registrationLimit = req.body.registrationLimit;
       if (req.body.registrationFee !== undefined)      event.registrationFee = req.body.registrationFee;
       if (req.body.tags !== undefined)                 event.tags = req.body.tags;
-      if (req.body.customForm !== undefined)           event.customForm = req.body.customForm;
+      if (req.body.customForm !== undefined && !event.formLocked) event.customForm = req.body.customForm;
       if (req.body.variants !== undefined)             event.variants = req.body.variants;
       if (req.body.purchaseLimitPerParticipant !== undefined) event.purchaseLimitPerParticipant = req.body.purchaseLimitPerParticipant;
       if (req.body.status !== undefined)               event.status = req.body.status;

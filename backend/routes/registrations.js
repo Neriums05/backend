@@ -249,15 +249,35 @@ router.put('/approve/:regId', ...requireRole('organizer'), async (req, res) => {
     }
 
     if (action === 'approve') {
-      // Decrement stock for the purchased variant
+      // Basic approval preconditions + stock safety checks
+      if (reg.event?.eventType !== 'merchandise') {
+        return res.status(400).json({ message: 'This approval endpoint is only for merchandise orders' });
+      }
+      if (!['pending_payment', 'payment_rejected'].includes(reg.status)) {
+        return res.status(400).json({ message: 'This order is not pending approval' });
+      }
+      if (!reg.paymentProof) {
+        return res.status(400).json({ message: 'Payment proof not uploaded yet' });
+      }
+
+      // Decrement stock for the purchased variant (re-check at approval time to avoid oversell)
       const event = reg.event;
       const variant = event.variants.find(
         v => v.size === reg.variant?.size && v.color === reg.variant?.color
       );
-      if (variant) {
-        variant.stock -= reg.quantity;
-        await event.save();
+      if (!variant) {
+        reg.status = 'payment_rejected';
+        await reg.save();
+        return res.status(400).json({ message: 'Variant not found. Order rejected.' });
       }
+      if (variant.stock < reg.quantity) {
+        reg.status = 'payment_rejected';
+        await reg.save();
+        return res.status(400).json({ message: 'Insufficient stock to approve. Order rejected.' });
+      }
+
+      variant.stock -= reg.quantity;
+      await event.save();
 
       // Generate QR code now that payment is confirmed
       const qrData = JSON.stringify({ ticketId: reg.ticketId });

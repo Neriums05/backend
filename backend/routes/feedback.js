@@ -3,6 +3,7 @@
 const router = require('express').Router();
 const Feedback = require('../models/Feedback');
 const Registration = require('../models/Registration');
+const Event = require('../models/Event');
 const { auth, requireRole } = require('../middleware/auth');
 
 // -------------------------------------------------------
@@ -49,6 +50,9 @@ router.post('/:eventId', ...requireRole('participant'), async (req, res) => {
 
 router.get('/:eventId', ...requireRole('organizer'), async (req, res) => {
   try {
+    const event = await Event.findOne({ _id: req.params.eventId, organizer: req.user.id });
+    if (!event) return res.status(403).json({ message: 'Access denied: not your event' });
+
     const feedbackList = await Feedback.find({ event: req.params.eventId }).sort({ createdAt: -1 });
 
     const average = feedbackList.length
