@@ -36,13 +36,13 @@ router.get('/', async (req, res) => {
     const { search, type, dateFrom, dateTo, eligibility } = req.query;
     let query = { status: { $in: ['published', 'ongoing', 'completed'] } };
 
-    if (type)        query.eventType  = type;
+    if (type) query.eventType = type;
     if (eligibility) query.eligibility = { $regex: eligibility, $options: 'i' };
 
     if (dateFrom || dateTo) {
       query.startDate = {};
       if (dateFrom) query.startDate.$gte = new Date(dateFrom);
-      if (dateTo)   query.startDate.$lte = new Date(dateTo);
+      if (dateTo) query.startDate.$lte = new Date(dateTo);
     }
 
     // Fetch all matching events first, then filter by search (including organizer name)
@@ -164,9 +164,9 @@ router.post('/:id/attend', ...requireRole('organizer'), async (req, res) => {
       return res.status(400).json({ message: 'This registration is not active' });
     }
 
-    reg.attended   = true;
+    reg.attended = true;
     reg.attendedAt = new Date();
-    reg.status     = 'attended';
+    reg.status = 'attended';
     await reg.save();
 
     res.json({ message: 'Attendance marked!', participant: reg.participant });
@@ -245,24 +245,24 @@ router.put('/:id', ...requireRole('organizer'), async (req, res) => {
 
     if (event.status === 'draft') {
       // Draft events can be fully edited - update any field that was sent
-      if (req.body.name !== undefined)                 event.name = req.body.name;
-      if (req.body.description !== undefined)          event.description = req.body.description;
-      if (req.body.eventType !== undefined)            event.eventType = req.body.eventType;
-      if (req.body.eligibility !== undefined)          event.eligibility = req.body.eligibility;
-      if (req.body.startDate !== undefined)            event.startDate = req.body.startDate;
-      if (req.body.endDate !== undefined)              event.endDate = req.body.endDate;
+      if (req.body.name !== undefined) event.name = req.body.name;
+      if (req.body.description !== undefined) event.description = req.body.description;
+      if (req.body.eventType !== undefined) event.eventType = req.body.eventType;
+      if (req.body.eligibility !== undefined) event.eligibility = req.body.eligibility;
+      if (req.body.startDate !== undefined) event.startDate = req.body.startDate;
+      if (req.body.endDate !== undefined) event.endDate = req.body.endDate;
       if (req.body.registrationDeadline !== undefined) event.registrationDeadline = req.body.registrationDeadline;
-      if (req.body.registrationLimit !== undefined)    event.registrationLimit = req.body.registrationLimit;
-      if (req.body.registrationFee !== undefined)      event.registrationFee = req.body.registrationFee;
-      if (req.body.tags !== undefined)                 event.tags = req.body.tags;
+      if (req.body.registrationLimit !== undefined) event.registrationLimit = req.body.registrationLimit;
+      if (req.body.registrationFee !== undefined) event.registrationFee = req.body.registrationFee;
+      if (req.body.tags !== undefined) event.tags = req.body.tags;
       if (req.body.customForm !== undefined && !event.formLocked) event.customForm = req.body.customForm;
-      if (req.body.variants !== undefined)             event.variants = req.body.variants;
+      if (req.body.variants !== undefined) event.variants = req.body.variants;
       if (req.body.purchaseLimitPerParticipant !== undefined) event.purchaseLimitPerParticipant = req.body.purchaseLimitPerParticipant;
-      if (req.body.status !== undefined)               event.status = req.body.status;
+      if (req.body.status !== undefined) event.status = req.body.status;
     } else if (event.status === 'published') {
       // Published events: only limited fields can change
-      if (req.body.description !== undefined)          event.description = req.body.description;
-      if (req.body.registrationDeadline)               event.registrationDeadline = req.body.registrationDeadline;
+      if (req.body.description !== undefined) event.description = req.body.description;
+      if (req.body.registrationDeadline) event.registrationDeadline = req.body.registrationDeadline;
       if (req.body.registrationLimit && Number(req.body.registrationLimit) > (event.registrationLimit || 0)) {
         event.registrationLimit = Number(req.body.registrationLimit);
       }
