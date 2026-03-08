@@ -9,8 +9,8 @@ require('dotenv').config(); // loads variables from .env file
 const http = require('http');
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
-const Event = require('./models/Event');
-const ForumMessage = require('./models/ForumMessage');
+const Event = require('../models/Event');
+const ForumMessage = require('../models/ForumMessage');
 
 const app = express();
 const server = http.createServer(app);
@@ -27,7 +27,7 @@ io.use((socket, next) => {
   if (!token) {
     return next(new Error('Authentication error: No token provided'));
   }
-  
+
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     socket.user = decoded; // Attach user info to socket
@@ -66,7 +66,7 @@ io.on('connection', (socket) => {
       if (e) authorized = true;
     } else {
       // participant
-      const Registration = require('./models/Registration');
+      const Registration = require('../models/Registration');
       const r = await Registration.findOne({ event: eventId, participant: socket.user.id, status: { $ne: 'cancelled' } });
       if (r) authorized = true;
     }
@@ -90,7 +90,7 @@ io.on('connection', (socket) => {
       }
 
       // Populate identity from DB to prevent spoofing
-      const User = require('./models/User');
+      const User = require('../models/User');
       const sender = await User.findById(socket.user.id);
       if (!sender) return sendSocketError('User not found');
 
@@ -113,7 +113,7 @@ io.on('connection', (socket) => {
   socket.on('pinMessage', async ({ eventId, messageId }) => {
     try {
       if (!(await verifyOrganizerOwnership(eventId))) return;
-      
+
       const message = await ForumMessage.findById(messageId);
       if (message && message.event.toString() === eventId) {
         message.isPinned = !message.isPinned;
@@ -131,7 +131,7 @@ io.on('connection', (socket) => {
   socket.on('deleteMessage', async ({ eventId, messageId }) => {
     try {
       if (!(await verifyOrganizerOwnership(eventId))) return;
-      
+
       const message = await ForumMessage.findOne({ _id: messageId, event: eventId });
       if (message) {
         await message.deleteOne();
@@ -157,13 +157,13 @@ app.use('/uploads', express.static('uploads'));
 
 // Register all route files
 // Each file handles a specific part of the API
-app.use('/api/auth',          require('./routes/auth'));
-app.use('/api/events',        require('./routes/events'));
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/events', require('./routes/events'));
 app.use('/api/registrations', require('./routes/registrations'));
-app.use('/api/organizers',    require('./routes/organizers'));
-app.use('/api/admin',         require('./routes/admin'));
-app.use('/api/feedback',      require('./routes/feedback'));
-app.use('/api/forum',         require('./routes/forum'));
+app.use('/api/organizers', require('./routes/organizers'));
+app.use('/api/admin', require('./routes/admin'));
+app.use('/api/feedback', require('./routes/feedback'));
+app.use('/api/forum', require('./routes/forum'));
 
 // Connect to MongoDB, then start the server
 mongoose.connect(process.env.MONGO_URI)

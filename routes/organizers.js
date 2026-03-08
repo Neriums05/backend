@@ -1,8 +1,8 @@
 // Organizer routes: list organizers, update profile, request password reset
 
 const router = require('express').Router();
-const User = require('../models/User');
-const { requireRole } = require('../middleware/auth');
+const User = require('../../models/User');
+const { requireRole } = require('../../middleware/auth');
 
 // -------------------------------------------------------
 // PUT /api/organizers/profile
@@ -42,8 +42,8 @@ router.post('/request-reset', ...requireRole('organizer'), async (req, res) => {
     }
 
     user.passwordResetRequest = {
-      status:      'pending',
-      reason:      req.body.reason.trim(),
+      status: 'pending',
+      reason: req.body.reason.trim(),
       requestedAt: new Date()
     };
     await user.save();

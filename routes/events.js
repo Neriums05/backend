@@ -5,10 +5,10 @@
 // Order: /trending -> /mine/all -> /by-organizer/:id -> /:id/attend -> /:id/attendance -> /:id
 
 const router = require('express').Router();
-const Event = require('../models/Event');
-const User = require('../models/User');
-const Registration = require('../models/Registration');
-const { requireRole } = require('../middleware/auth');
+const Event = require('../../models/Event');
+const User = require('../../models/User');
+const Registration = require('../../models/Registration');
+const { requireRole } = require('../../middleware/auth');
 
 // Helper: post a new event notification to Discord via webhook
 // Uses the built-in fetch (Node 18+). Silently fails if no webhook configured.
@@ -40,13 +40,13 @@ router.get('/', async (req, res) => {
     const { search, type, dateFrom, dateTo, eligibility } = req.query;
     let query = { status: { $in: ['published', 'ongoing', 'completed'] } };
 
-    if (type)        query.eventType  = type;
+    if (type) query.eventType = type;
     if (eligibility) query.eligibility = { $regex: eligibility, $options: 'i' };
 
     if (dateFrom || dateTo) {
       query.startDate = {};
       if (dateFrom) query.startDate.$gte = new Date(dateFrom);
-      if (dateTo)   query.startDate.$lte = new Date(dateTo);
+      if (dateTo) query.startDate.$lte = new Date(dateTo);
     }
 
     // Fetch all matching events first, then filter by search (including organizer name)
@@ -58,14 +58,14 @@ router.get('/', async (req, res) => {
     if (search && search.trim()) {
       const terms = search.trim().split(/\s+/).filter(Boolean);
       const regexes = terms.map(t => new RegExp(t, 'i'));
-      
+
       events = events.filter(e => {
         const textToMatch = [
           e.name,
           ...(e.tags || []),
           e.organizer?.organizerName || ''
         ].join(' ');
-        
+
         // Multi-term matching: all terms must match somewhere in the text
         return regexes.every(re => re.test(textToMatch));
       });
@@ -148,7 +148,7 @@ router.get('/:id/export-csv', ...requireRole('organizer'), async (req, res) => {
       r.attendedAt ? new Date(r.attendedAt).toISOString() : ''
     ]);
 
-    const csv = [headers, ...rows].map(row => 
+    const csv = [headers, ...rows].map(row =>
       row.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')
     ).join('\n');
 
@@ -208,9 +208,9 @@ router.post('/:id/attend', ...requireRole('organizer'), async (req, res) => {
       return res.status(400).json({ message: 'This registration is not active' });
     }
 
-    reg.attended         = true;
-    reg.attendedAt       = new Date();
-    reg.status           = 'attended';
+    reg.attended = true;
+    reg.attendedAt = new Date();
+    reg.status = 'attended';
     reg.attendanceMethod = method || 'manual'; // audit log: scan or manual (Requirement 13.1.3)
     await reg.save();
 
@@ -321,20 +321,20 @@ router.put('/:id', ...requireRole('organizer'), async (req, res) => {
       }
 
       // Draft events can be fully edited - update any field that was sent
-      if (req.body.name !== undefined)                 event.name = req.body.name;
-      if (req.body.description !== undefined)          event.description = req.body.description;
-      if (req.body.eventType !== undefined)            event.eventType = req.body.eventType;
-      if (req.body.eligibility !== undefined)          event.eligibility = req.body.eligibility;
-      if (req.body.startDate !== undefined)            event.startDate = req.body.startDate;
-      if (req.body.endDate !== undefined)              event.endDate = req.body.endDate;
+      if (req.body.name !== undefined) event.name = req.body.name;
+      if (req.body.description !== undefined) event.description = req.body.description;
+      if (req.body.eventType !== undefined) event.eventType = req.body.eventType;
+      if (req.body.eligibility !== undefined) event.eligibility = req.body.eligibility;
+      if (req.body.startDate !== undefined) event.startDate = req.body.startDate;
+      if (req.body.endDate !== undefined) event.endDate = req.body.endDate;
       if (req.body.registrationDeadline !== undefined) event.registrationDeadline = req.body.registrationDeadline;
-      if (req.body.registrationLimit !== undefined)    event.registrationLimit = req.body.registrationLimit;
-      if (req.body.registrationFee !== undefined)      event.registrationFee = req.body.registrationFee;
-      if (req.body.tags !== undefined)                 event.tags = req.body.tags;
+      if (req.body.registrationLimit !== undefined) event.registrationLimit = req.body.registrationLimit;
+      if (req.body.registrationFee !== undefined) event.registrationFee = req.body.registrationFee;
+      if (req.body.tags !== undefined) event.tags = req.body.tags;
       if (req.body.customForm !== undefined && !event.formLocked) event.customForm = req.body.customForm;
-      if (req.body.variants !== undefined)             event.variants = req.body.variants;
+      if (req.body.variants !== undefined) event.variants = req.body.variants;
       if (req.body.purchaseLimitPerParticipant !== undefined) event.purchaseLimitPerParticipant = req.body.purchaseLimitPerParticipant;
-      if (req.body.status !== undefined)               event.status = req.body.status;
+      if (req.body.status !== undefined) event.status = req.body.status;
     } else if (event.status === 'published') {
       // Published: validate registrationDeadline if changed
       if (req.body.registrationDeadline) {
@@ -345,7 +345,7 @@ router.put('/:id', ...requireRole('organizer'), async (req, res) => {
         event.registrationDeadline = req.body.registrationDeadline;
       }
       // Other published fields...
-      if (req.body.description !== undefined)          event.description = req.body.description;
+      if (req.body.description !== undefined) event.description = req.body.description;
       if (req.body.registrationLimit && Number(req.body.registrationLimit) > (event.registrationLimit || 0)) {
         event.registrationLimit = Number(req.body.registrationLimit);
       }

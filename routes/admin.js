@@ -1,11 +1,11 @@
 // Admin routes: manage organizers, handle password reset requests
 
 const router = require('express').Router();
-const User = require('../models/User');
-const Event = require('../models/Event');
-const Registration = require('../models/Registration');
+const User = require('../../models/User');
+const Event = require('../../models/Event');
+const Registration = require('../../models/Registration');
 const bcrypt = require('bcryptjs');
-const { requireRole } = require('../middleware/auth');
+const { requireRole } = require('../../middleware/auth');
 
 function buildOrganizerLoginEmail(organizerName) {
   return organizerName
@@ -52,7 +52,7 @@ router.post('/organizer', ...requireRole('admin'), async (req, res) => {
       return res.status(400).json({ message: 'An organizer with this name already exists (email conflict: ' + loginEmail + ')' });
     }
 
-    const rawPassword    = generatePassword('Pass@');
+    const rawPassword = generatePassword('Pass@');
     const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
     const user = await User.create({
@@ -142,7 +142,7 @@ router.put('/reset-requests/:id', ...requireRole('admin'), async (req, res) => {
 
       // Push to history before updating status
       user.passwordResetHistory.push(buildResetHistoryEntry(user, 'approved', adminComment));
-      user.passwordResetRequest.status      = 'approved';
+      user.passwordResetRequest.status = 'approved';
       user.passwordResetRequest.tempPasswordExpiresAt = undefined; // Ensure it's cleared if it existed
       user.passwordResetRequest.adminComment = adminComment;
       await user.save();
@@ -152,7 +152,7 @@ router.put('/reset-requests/:id', ...requireRole('admin'), async (req, res) => {
     } else {
       // Push rejected entry to history too
       user.passwordResetHistory.push(buildResetHistoryEntry(user, 'rejected', adminComment));
-      user.passwordResetRequest.status      = 'rejected';
+      user.passwordResetRequest.status = 'rejected';
       user.passwordResetRequest.adminComment = adminComment;
       await user.save();
       return res.json({ message: 'Rejected' });

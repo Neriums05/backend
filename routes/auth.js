@@ -3,8 +3,8 @@
 const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
-const { auth } = require('../middleware/auth');
+const User = require('../../models/User');
+const { auth } = require('../../middleware/auth');
 
 // Helper: creates a JWT token for a user
 function createToken(user) {
@@ -16,9 +16,9 @@ function createToken(user) {
 }
 
 function isIIITEmail(email) {
-  return email.endsWith('@iiit.ac.in') || 
-         email.endsWith('@students.iiit.ac.in') || 
-         email.endsWith('@research.iiit.ac.in');
+  return email.endsWith('@iiit.ac.in') ||
+    email.endsWith('@students.iiit.ac.in') ||
+    email.endsWith('@research.iiit.ac.in');
 }
 
 function getDisplayName(user) {
@@ -48,8 +48,8 @@ router.post('/register', async (req, res) => {
     // IIIT students must use their IIIT email
     if (participantType === 'iiit') {
       if (!isIIITEmail(email)) {
-        return res.status(400).json({ 
-          message: 'IIIT students must use a valid institutional email (@iiit.ac.in, @students.iiit.ac.in, or @research.iiit.ac.in)' 
+        return res.status(400).json({
+          message: 'IIIT students must use a valid institutional email (@iiit.ac.in, @students.iiit.ac.in, or @research.iiit.ac.in)'
         });
       }
     }
