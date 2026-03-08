@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const User = require('../models/User');
+const PasswordResetRequest = require('../models/PasswordResetRequest');
 const { requireRole } = require('../middleware/auth');
 
 // Must be before /:id
@@ -38,6 +39,46 @@ router.get('/:id', async (req, res) => {
       .select('organizerName category description contactEmail');
     if (!organizer) return res.status(404).json({ message: 'Organizer not found' });
     res.json(organizer);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.post('/password-reset-request', ...requireRole('organizer'), async (req, res) => {
+  try {
+    const { reason } = req.body;
+    
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ message: 'Reason is required' });
+    }
+
+    const existingPending = await PasswordResetRequest.findOne({
+      organizer: req.user.id,
+      status: 'pending'
+    });
+
+    if (existingPending) {
+      return res.status(400).json({ message: 'You already have a pending password reset request' });
+    }
+
+    const request = await PasswordResetRequest.create({
+      organizer: req.user.id,
+      reason: reason.trim()
+    });
+
+    res.status(201).json({ message: 'Password reset request submitted', request });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.get('/password-reset-requests/mine', ...requireRole('organizer'), async (req, res) => {
+  try {
+    const requests = await PasswordResetRequest.find({ organizer: req.user.id })
+      .populate('reviewedBy', 'email')
+      .sort({ createdAt: -1 })
+      .lean();
+    res.json(requests);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

@@ -2,8 +2,10 @@ const router = require('express').Router();
 const User = require('../models/User');
 const Event = require('../models/Event');
 const Registration = require('../models/Registration');
+const PasswordResetRequest = require('../models/PasswordResetRequest');
 const bcrypt = require('bcryptjs');
 const { requireRole } = require('../middleware/auth');
+const { sendEmail } = require('../utils/email');
 
 function buildOrganizerLoginEmail(organizerName) {
   return organizerName
@@ -76,6 +78,69 @@ router.delete('/organizer/:id', ...requireRole('admin'), async (req, res) => {
 
     await User.findByIdAndDelete(req.params.id);
     res.json({ message: 'Organizer and all their events removed' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.get('/password-reset-requests', ...requireRole('admin'), async (req, res) => {
+  try {
+    const requests = await PasswordResetRequest.find()
+      .populate('organizer', 'organizerName email contactEmail')
+      .populate('reviewedBy', 'email')
+      .sort({ createdAt: -1 })
+      .lean();
+    res.json(requests);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.post('/password-reset-requests/:id/review', ...requireRole('admin'), async (req, res) => {
+  try {
+    const { action, adminComment } = req.body;
+    
+    if (!['approve', 'reject'].includes(action)) {
+      return res.status(400).json({ message: 'Invalid action' });
+    }
+
+    const request = await PasswordResetRequest.findById(req.params.id)
+      .populate('organizer', 'email organizerName contactEmail');
+    
+    if (!request) {
+      return res.status(404).json({ message: 'Reset request not found' });
+    }
+
+    if (request.status !== 'pending') {
+      return res.status(400).json({ message: 'This request has already been reviewed' });
+    }
+
+    request.status = action === 'approve' ? 'approved' : 'rejected';
+    request.adminComment = adminComment || '';
+    request.reviewedBy = req.user.id;
+    request.reviewedAt = new Date();
+    await request.save();
+
+    if (action === 'approve') {
+      const newPassword = generatePassword('Pass@');
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      
+      await User.findByIdAndUpdate(request.organizer._id, { password: hashedPassword });
+
+      try {
+        await sendEmail(
+          request.organizer.contactEmail || request.organizer.email,
+          'Password Reset - Felicity',
+          `Hello ${request.organizer.organizerName},\n\nYour password reset request has been approved.\n\nNew Password: ${newPassword}\n\nPlease login with your email: ${request.organizer.email}\n\nBest regards,\nFelicity Team`
+        );
+      } catch (emailErr) {
+        console.error('Failed to send password reset email:', emailErr);
+      }
+
+      res.json({ message: 'Request approved and new password sent to organizer', newPassword });
+    } else {
+      res.json({ message: 'Request rejected' });
+    }
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
