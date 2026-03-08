@@ -2,6 +2,7 @@ const router = require('express').Router();
 const Event = require('../models/Event');
 const User = require('../models/User');
 const Registration = require('../models/Registration');
+const AttendanceLog = require('../models/AttendanceLog');
 const { requireRole } = require('../middleware/auth');
 
 async function fireDiscordWebhook(webhookUrl, event) {
@@ -147,6 +148,115 @@ router.get('/:id/attendance', ...requireRole('organizer'), async (req, res) => {
   }
 });
 
+router.get('/:id/attendance/live', ...requireRole('organizer'), async (req, res) => {
+  try {
+    const event = await findOwnedEvent(req.params.id, req.user.id);
+    if (!event) return res.status(403).json({ message: 'Access denied: not your event' });
+
+    const regs = await Registration.find({ 
+      event: req.params.id,
+      status: { $in: ['registered', 'attended'] }
+    })
+      .populate('participant', 'firstName lastName email contactNumber')
+      .lean();
+
+    const scanned = regs.filter(r => r.attended);
+    const notScanned = regs.filter(r => !r.attended);
+
+    const stats = {
+      totalRegistrations: regs.length,
+      scanned: scanned.length,
+      notScanned: notScanned.length,
+      scanRate: regs.length > 0 ? ((scanned.length / regs.length) * 100).toFixed(2) : 0
+    };
+
+    res.json({
+      stats,
+      scanned,
+      notScanned
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.post('/:id/attendance/override', ...requireRole('organizer'), async (req, res) => {
+  try {
+    const event = await findOwnedEvent(req.params.id, req.user.id);
+    if (!event) return res.status(403).json({ message: 'Access denied: not your event' });
+
+    const { registrationId, attended, reason } = req.body;
+
+    if (!registrationId) {
+      return res.status(400).json({ message: 'Registration ID is required' });
+    }
+
+    if (typeof attended !== 'boolean') {
+      return res.status(400).json({ message: 'Attended status must be specified' });
+    }
+
+    const reg = await Registration.findOne({
+      _id: registrationId,
+      event: req.params.id
+    }).populate('participant', 'firstName lastName email');
+
+    if (!reg) {
+      return res.status(404).json({ message: 'Registration not found for this event' });
+    }
+
+    const previousStatus = reg.attended;
+    reg.attended = attended;
+    
+    if (attended) {
+      if (!reg.attendedAt) {
+        reg.attendedAt = new Date();
+      }
+      reg.status = 'attended';
+      reg.attendanceMethod = 'manual';
+    } else {
+      reg.attendedAt = null;
+      reg.status = 'registered';
+    }
+
+    await reg.save();
+
+    await AttendanceLog.create({
+      event: req.params.id,
+      registration: reg._id,
+      participant: reg.participant._id,
+      organizer: req.user.id,
+      action: 'manual_override',
+      method: 'manual',
+      reason: reason || 'Manual override by organizer',
+      previousAttendanceStatus: previousStatus
+    });
+
+    res.json({ 
+      message: attended ? 'Attendance marked via manual override' : 'Attendance removed via manual override',
+      registration: reg 
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.get('/:id/attendance/logs', ...requireRole('organizer'), async (req, res) => {
+  try {
+    const event = await findOwnedEvent(req.params.id, req.user.id);
+    if (!event) return res.status(403).json({ message: 'Access denied: not your event' });
+
+    const logs = await AttendanceLog.find({ event: req.params.id })
+      .populate('participant', 'firstName lastName email')
+      .populate('organizer', 'organizerName email')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json(logs);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 router.post('/:id/attend', ...requireRole('organizer'), async (req, res) => {
   try {
     const event = await findOwnedEvent(req.params.id, req.user.id);
@@ -167,17 +277,33 @@ router.post('/:id/attend', ...requireRole('organizer'), async (req, res) => {
       return res.status(404).json({ message: 'Ticket not found for this event' });
     }
     if (reg.attended) {
-      return res.status(400).json({ message: 'Already scanned', participant: reg.participant });
+      return res.status(400).json({ 
+        message: 'Already scanned', 
+        participant: reg.participant,
+        attendedAt: reg.attendedAt,
+        isDuplicate: true
+      });
     }
     if (['cancelled', 'payment_rejected', 'pending_payment'].includes(reg.status)) {
       return res.status(400).json({ message: 'This registration is not active' });
     }
 
+    const previousStatus = reg.attended;
     reg.attended = true;
     reg.attendedAt = new Date();
     reg.status = 'attended';
     reg.attendanceMethod = method || 'manual';
     await reg.save();
+
+    await AttendanceLog.create({
+      event: req.params.id,
+      registration: reg._id,
+      participant: reg.participant._id,
+      organizer: req.user.id,
+      action: 'mark_attended',
+      method: method || 'manual',
+      previousAttendanceStatus: previousStatus
+    });
 
     res.json({ message: 'Attendance marked!', participant: reg.participant });
   } catch (err) {

@@ -73,7 +73,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('sendMessage', async (data) => {
-    const { eventId, text } = data;
+    const { eventId, text, parentMessageId } = data;
     if (!text || !text.trim()) return;
 
     try {
@@ -93,7 +93,8 @@ io.on('connection', (socket) => {
         event: eventId,
         senderName,
         senderRole,
-        text: text.trim().slice(0, 1000)
+        text: text.trim().slice(0, 1000),
+        parentMessage: parentMessageId || null
       });
       io.to(eventId).emit('messageReceived', newMessage);
     } catch (err) {
@@ -134,6 +135,55 @@ io.on('connection', (socket) => {
     } catch (err) {
       console.error('Error deleting message:', err);
       sendSocketError('Failed to delete message');
+    }
+  });
+
+  socket.on('reactToMessage', async ({ eventId, messageId, emoji }) => {
+    try {
+      if (!socket.rooms.has(eventId)) {
+        sendSocketError('You must join the event forum before reacting');
+        return;
+      }
+
+      if (!emoji || !emoji.trim()) {
+        sendSocketError('Emoji is required');
+        return;
+      }
+
+      const User = require('./models/User');
+      const user = await User.findById(socket.user.id);
+      if (!user) return sendSocketError('User not found');
+
+      const userName = user.role === 'admin' ? 'Admin' : (user.role === 'organizer' ? user.organizerName : (user.firstName + ' ' + user.lastName));
+
+      const message = await ForumMessage.findOne({ _id: messageId, event: eventId });
+      if (!message) {
+        sendSocketError('Message not found in this event');
+        return;
+      }
+
+      const existingReactionIndex = message.reactions.findIndex(
+        r => r.userId.toString() === socket.user.id && r.emoji === emoji
+      );
+
+      if (existingReactionIndex >= 0) {
+        message.reactions.splice(existingReactionIndex, 1);
+      } else {
+        message.reactions.push({
+          emoji,
+          userId: socket.user.id,
+          userName
+        });
+      }
+
+      await message.save();
+      io.to(eventId).emit('messageReactionUpdated', {
+        messageId,
+        reactions: message.reactions
+      });
+    } catch (err) {
+      console.error('Error reacting to message:', err);
+      sendSocketError('Failed to react to message');
     }
   });
 });
